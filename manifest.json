@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "Firefly Video Auto Prompt",
+  "version": "1.0",
+  "description": "Auto prompt batch for Adobe Firefly Video.",
+  "permissions": ["activeTab", "scripting","storage","downloads"],
+  "host_permissions": [
+    "*://firefly.adobe.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Firefly Batch Prompt"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://firefly.adobe.com/*"],
+      "js": ["content.js"]
+    }
+  ]
+}
