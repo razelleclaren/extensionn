@@ -1,114 +1,99 @@
+// === popup.js ===
 window.addEventListener("DOMContentLoaded", () => {
-
     const runBtn = document.getElementById("run");
     const progressBox = document.getElementById("progress-log");
-    
+    const promptInput = document.getElementById("prompts"); // ID di HTML adalah 'prompts'
+    const progressText = document.getElementById("progress");
+    const autoDownloadCheck = document.getElementById("autoDownload");
 
-    // === LOAD SAVED STATE ON POPUP OPEN ===
-    chrome.storage.local.get(["log", "prompt", "progress"], (data) => {
-        
-        // Load saved log
-        if (data.log && Array.isArray(data.log)) {
-            data.log.forEach(raw => {
+    // 1. LOAD DATA DARI STORAGE SAAT POPUP DIBUKA
+// === LOAD SAVED STATE ON POPUP OPEN ===
+chrome.storage.local.get(["log", "prompt", "progress", "autoDownload"], (data) => {
+    // Bersihkan UI sebelum mengisi ulang
+    progressBox.innerHTML = "";
 
-                // ❌ skip raw JSON logs like: "prompt-done #1 - { ... }"
-                if (raw.includes("{") && raw.includes("}")) return;
+    if (data.log && Array.isArray(data.log)) {
+        data.log.forEach(raw => {
+            // HAPUS atau KOMENTARI filter di bawah ini agar log muncul:
+            // if (/start-prompt/i.test(raw)) return; 
+            // if (/prompt-done/i.test(raw)) return;
 
-                // ❌ skip raw “start-prompt #1 - xxx”
-                if (/start-prompt/i.test(raw)) return;
-                if (/prompt-done/i.test(raw)) return;
-                if (/all-done/i.test(raw)) return;
-                const div = document.createElement("div");
-                div.textContent = raw;
-                progressBox.appendChild(div);
-            });
-            progressBox.scrollTop = progressBox.scrollHeight;
-        }
+            const div = document.createElement("div");
+            div.textContent = raw;
+            progressBox.appendChild(div);
+        });
+        progressBox.scrollTop = progressBox.scrollHeight;
+    }
 
-        // Load prompt & progress text
-        document.getElementById("prompt").value = data.prompt || "";
+    // Pastikan ID elemen sesuai dengan yang ada di popup.html
+    if (document.getElementById("prompts")) {
+        document.getElementById("prompts").value = data.prompt || "";
+    }
+    if (document.getElementById("progress")) {
         document.getElementById("progress").innerText = data.progress || "Idle...";
+    }
+    if (document.getElementById("autoDownload")) {
         document.getElementById("autoDownload").checked = data.autoDownload || false;
+    }
+});
 
-    });
-
-
-    // === FUNCTION: ADD LOG + SAVE IT ===
-    function logProgress(msg) {
-
-        // display to popup
+    // 2. FUNGSI UNTUK MENAMBAH LOG KE UI SAJA
+    function appendLogToUI(msg) {
         const line = document.createElement("div");
         line.textContent = msg;
         progressBox.appendChild(line);
         progressBox.scrollTop = progressBox.scrollHeight;
-
-        // save to storage
-        chrome.storage.local.get(["log"], (data) => {
-            const arr = data.log || [];
-            arr.push(msg);
-            chrome.storage.local.set({ log: arr });
-        });
-
-        // also store last progress text
-        chrome.storage.local.set({ progress: msg });
     }
 
-
-    // === RUN BATCH ===
+    // 3. EVENT TOMBOL RUN
     runBtn.addEventListener("click", () => {
-
-
-
-        logProgress("🚀 Starting batch…");
-
-        const txt = document.getElementById("prompts").value.trim();
+        const txt = promptInput.value.trim();
         if (!txt) {
             alert("No prompts provided.");
             return;
         }
 
         const prompts = txt.split("\n").map(x => x.trim()).filter(x => x);
+        const autoDownload = autoDownloadCheck.checked;
 
-        const autoDownload = document.getElementById("autoDownload").checked;
-        chrome.storage.local.set({ autoDownload });
+        // Reset log di storage dan UI untuk batch baru
+        chrome.storage.local.set({ log: [], prompt: txt, autoDownload: autoDownload }, () => {
+            progressBox.innerHTML = "";
+            appendLogToUI("🚀 Starting batch…");
+        });
 
         chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
             chrome.tabs.sendMessage(
                 tabs[0].id,
-                { action: "runBatch", prompts,autoDownload },
-                () => {
-                    logProgress("📨 Sent prompts to page…");
-                }
+                { action: "runBatch", prompts, autoDownload }
             );
         });
-
-        // Save prompt text user typed
-        chrome.storage.local.set({ prompt: txt });
     });
 
-
-    // === RECEIVE LIVE PROGRESS FROM content.js ===
-    chrome.runtime.onMessage.addListener((msg) => {
+    // 4. TERIMA PESAN PROGRESS (Sinkronisasi dengan UI saat popup terbuka)
+  // === RECEIVE LIVE PROGRESS FROM content.js / background.js ===
+chrome.runtime.onMessage.addListener((msg) => {
     if (msg.action !== "progress") return;
 
     let line = "";
-
     if (msg.type === "start-prompt") {
         line = `▶️ ${msg.index}/${msg.total} — ${msg.prompt}`;
-    } 
-    else if (msg.type === "prompt-done") {
+    } else if (msg.type === "prompt-done") {
         line = `✅ Finished ${msg.index}/${msg.total}`;
-    } 
-    else if (msg.type === "all-done") {
+    } else if (msg.type === "all-done") {
         line = `🎉 All prompts completed!`;
-    } 
-    else {
-        // ignore unknown/technical logs
-        return;
     }
 
-    logProgress(line);
+    if (line) {
+        // Tampilkan ke UI saja, jangan panggil logProgress yang menyimpan ke storage lagi
+        const div = document.createElement("div");
+        div.textContent = line;
+        progressBox.appendChild(div);
+        progressBox.scrollTop = progressBox.scrollHeight;
+        
+        if (document.getElementById("progress")) {
+            document.getElementById("progress").innerText = line;
+        }
+    }
 });
-
-
 });
